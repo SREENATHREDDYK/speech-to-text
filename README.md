@@ -47,15 +47,11 @@ Live transcription uses the Google Gemini Live API (`gemini-3.5-transcribe-live`
 - **Edit and delete**: edit transcript text inline; deleting a transcript also deletes its audio.
 - **Responsive UI**: desktop dashboard layout that stacks into a single column on phones.
 
+
 ## Screenshots
 
-_Screenshots are not included yet. Add them to a folder such as `docs/screenshots/` and update the paths below._
+_Screenshots of the application will be added soon._
 
-| View | Screenshot |
-| --- | --- |
-| Dashboard (desktop) | `docs/screenshots/dashboard.png` _(placeholder)_ |
-| Live transcription while recording | `docs/screenshots/recording.png` _(placeholder)_ |
-| Mobile layout | `docs/screenshots/mobile.png` _(placeholder)_ |
 
 ## Technology stack
 
@@ -511,9 +507,11 @@ Open the Vercel URL and check:
 - **In-progress recordings on restart.** Restarting or redeploying the server ends any recording in progress.
 - **No automated tests** are included yet.
 
+
 ## Author
 
-**Your Name**
+**Sreenath Reddy**
 
 - GitHub: [SREENATHREDDYK](https://github.com/SREENATHREDDYK)
-- LinkedIn:https://www.linkedin.com/in/sreenathreddy811/
+- LinkedIn: [Sreenath Reddy](https://www.linkedin.com/in/sreenathreddy811/)
+
