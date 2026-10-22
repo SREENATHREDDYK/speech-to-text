@@ -8,7 +8,9 @@ Live transcription uses the Google Gemini Live API (`gemini-3.5-transcribe-live`
 
 
 **Live Demo:** [Speech-to-Text App](https://speech-to-text-orpin-three.vercel.app/)
+
 **Backend Health:** [Check API Status](https://speech-to-text-ddk6.onrender.com/health)
+
 **GitHub Repository:** [speech-to-text](https://github.com/SREENATHREDDYK/speech-to-text)
 
 ---
