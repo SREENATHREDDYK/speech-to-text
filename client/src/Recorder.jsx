@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MicIcon } from './Icons.jsx';
 import LiveTranscription from './LiveTranscription.jsx';
+import { getWebSocketUrl } from './api.js';
 
 function Recorder({ onSaved, onStatusChange }) {
     const [status, setStatus] = useState('idle');
@@ -82,8 +83,7 @@ function Recorder({ onSaved, onStatusChange }) {
             source.connect(worklet);
             worklet.connect(audioContext.destination);
 
-            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-            const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+            const socket = new WebSocket(getWebSocketUrl());
             socket.binaryType = 'arraybuffer';
             socketRef.current = socket;
 

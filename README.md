@@ -6,7 +6,9 @@ Live transcription uses the Google Gemini Live API (`gemini-3.5-transcribe-live`
 
 > **Why Gemini instead of a self-hosted open-source model?** Gemini provides low-latency streaming transcription with automatic multilingual and code-mixed language support as a managed API, so the app needs no GPU server or model hosting to deliver real-time results.
 
-**Live demo:** _not deployed yet — add the URL here after deployment._
+**Live demo (frontend, Vercel):** `https://<your-app>.vercel.app` _(placeholder — replace after deploying)_
+
+**Backend (Render):** `https://speech-to-text-ddk6.onrender.com` — health check at [`/health`](https://speech-to-text-ddk6.onrender.com/health)
 
 ---
 
@@ -84,6 +86,7 @@ The Gemini API key is used only on the server. The browser never connects to Gem
 speech-to-text/
 ├── client/                         React + Vite frontend
 │   ├── index.html
+│   ├── .env.example                VITE_API_BASE_URL and VITE_WS_URL placeholders
 │   ├── vite.config.js              Dev proxy: /transcripts and /ws -> http://localhost:5000
 │   ├── public/
 │   │   └── pcm-worklet.js          Converts microphone audio to 16 kHz 16-bit PCM
@@ -159,7 +162,9 @@ cp .env.example .env
 
 ## Environment variables
 
-All variables belong to the **server** (`server/.env`). The frontend has no environment variables and never receives the API key.
+### Backend (`server/.env` locally, Render environment in production)
+
+All secrets belong to the server. The frontend never receives the Gemini API key or the database URL.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -169,7 +174,7 @@ All variables belong to the **server** (`server/.env`). The frontend has no envi
 | `NODE_ENV` | No | — | Set to `production` in production. Outside production, error stack traces are printed to the server log (never sent to clients). |
 | `SESSION_LIMIT_SECONDS` | No | `300` | Maximum recording length in seconds. Capped at `600` because a Gemini live session lasts at most 10 minutes. |
 | `MAX_CONCURRENT_SESSIONS` | No | `3` | How many recordings can run at the same time. |
-| `ALLOWED_ORIGINS` | No | — | Extra origins (comma separated) allowed to open the WebSocket. The page's own origin is always allowed. |
+| `ALLOWED_ORIGINS` | In production | — | Frontend origins allowed to call the API (CORS) and open the WebSocket, comma separated, for example `https://<your-app>.vercel.app`. Not needed locally, where the Vite proxy makes requests same-origin. |
 
 Example `server/.env` (placeholders only):
 
@@ -183,7 +188,16 @@ MAX_CONCURRENT_SESSIONS=3
 ALLOWED_ORIGINS=
 ```
 
-**Keep secrets out of Git.** `.gitignore` excludes `.env` and `.env.*` (except `.env.example`). Never commit real keys or connection strings, and keep `.env.example` limited to empty values or placeholders.
+### Frontend (`client/.env` locally, Vercel environment in production)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | In production | Backend base URL, for example `https://speech-to-text-ddk6.onrender.com` (no trailing slash). Leave empty locally to use the Vite proxy. |
+| `VITE_WS_URL` | In production | WebSocket URL, for example `wss://speech-to-text-ddk6.onrender.com/ws`. Leave empty locally to use the Vite proxy. |
+
+`VITE_` variables are built into the public JavaScript bundle, so they must never contain secrets. See `client/.env.example`.
+
+**Keep secrets out of Git.** `.gitignore` excludes `.env` and `.env.*` (except `.env.example`). Never commit real keys or connection strings, and keep `.env.example` files limited to empty values or placeholders.
 
 ## Neon PostgreSQL and migrations
 
@@ -270,7 +284,7 @@ npm start
 
 `npm start` runs `node index.js` and does not read `server/.env`; in production, set the variables in your host's environment settings. (`npm run db:migrate` reads `server/.env` if it exists.)
 
-Note: the Express server does not serve `client/dist`. See [Deployment](#deployment) for how to serve both from one origin.
+For a production frontend build, set `VITE_API_BASE_URL` and `VITE_WS_URL` before running `npm run build`; their values are built into the bundle. In production the frontend (Vercel) and backend (Render) run on different domains; see [Deployment](#deployment).
 
 ## API reference
 
@@ -344,7 +358,11 @@ The frontend calculates `from`/`to` in the user's own time zone (for example, Ye
 
 ### WebSocket: `/ws`
 
-Used by the recorder for live transcription. The connection is accepted only from the page's own origin or an origin listed in `ALLOWED_ORIGINS`.
+Used by the recorder for live transcription. The connection is accepted only from the server's own origin or an origin listed in `ALLOWED_ORIGINS`; other origins get `403`.
+
+### CORS
+
+Browser requests from an origin listed in `ALLOWED_ORIGINS` receive `Access-Control-Allow-Origin` for that origin (methods `GET, POST, PUT, DELETE, OPTIONS`, header `Content-Type`). `OPTIONS` preflight requests are answered with `204`. Other origins receive no CORS headers, so browsers block their requests.
 
 | Direction | Message |
 | --- | --- |
@@ -378,64 +396,109 @@ npm run build
 
 ## Deployment
 
-The app needs a host that supports **long-lived WebSocket connections** (for example, a VM such as AWS EC2, or a platform such as Render or Railway).
+The frontend is deployed to **Vercel** and the backend to **Render**, which supports the long-lived WebSocket connections used for live transcription. They run on different domains: the frontend reaches the backend through `VITE_API_BASE_URL` and `VITE_WS_URL`, and the backend allows the frontend's origin through `ALLOWED_ORIGINS` (CORS for the REST API, and the origin check for the WebSocket).
 
-**Same-origin requirement.** The frontend calls relative paths (`/transcripts`, `/transcripts/:id/audio`) and opens the WebSocket at `wss://<page host>/ws`. Frontend and backend must therefore be served from **one domain**. The backend does not add CORS headers, and Express does not serve the built frontend, so hosting them on two different domains is not supported without code changes.
+Deploy the backend first, because the frontend needs its URL.
 
-**Recommended setup: one server with a reverse proxy (example: EC2 + Nginx)**
+### 1. Backend on Render
 
-1. Install Node.js 22.12+ and Nginx on the server.
-2. Copy the project, then run `npm install` in `server/` and in `client/`.
-3. Set the environment variables (see [Environment variables](#environment-variables)) with `NODE_ENV=production`.
-4. Run `npm run db:migrate` in `server/`.
-5. Run `npm run build` in `client/`.
-6. Start the backend with `npm start` under a process manager (for example, a systemd service) so it restarts automatically.
-7. Configure Nginx to serve `client/dist` and forward the API and WebSocket paths to the backend:
+Create a **Web Service** from the GitHub repository with these settings:
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.example;
+| Setting | Value |
+| --- | --- |
+| Root Directory | `server` |
+| Build Command | `npm install` |
+| Start Command | `npm start` |
 
-    root /path/to/speech-to-text/client/dist;
-    index index.html;
+The server requires Node.js 22.9 or newer (`engines` in `server/package.json`). Render provides the `PORT` variable, which the server reads automatically.
 
-    location /transcripts {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host $host;
-        client_max_body_size 1m;
-    }
+**Environment variables** (Render → your service → Environment):
 
-    location /ws {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header Origin $http_origin;
-        proxy_read_timeout 900s;
-    }
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Your Neon connection string, ending with `?sslmode=verify-full` |
+| `GEMINI_API_KEY` | Your Gemini API key |
+| `NODE_ENV` | `production` |
+| `ALLOWED_ORIGINS` | Your exact Vercel frontend origin, for example `https://<your-app>.vercel.app` |
 
-    location / {
-        try_files $uri /index.html;
-    }
-}
+Optional: `SESSION_LIMIT_SECONDS` and `MAX_CONCURRENT_SESSIONS` (see [Environment variables](#environment-variables)).
+
+**Setting `ALLOWED_ORIGINS` correctly**
+
+The value must match the browser's `Origin` header **exactly**:
+
+- Include the scheme: `https://<your-app>.vercel.app`
+- **No trailing slash** and no path: not `https://<your-app>.vercel.app/` and not `https://<your-app>.vercel.app/app`
+- Use the domain users actually open. Vercel preview deployments use different URLs; add each one you need, comma separated: `https://<your-app>.vercel.app,https://<your-preview>.vercel.app`
+- If you later add a custom domain, add it as well.
+
+After changing environment variables, redeploy the service. Check it at `https://speech-to-text-ddk6.onrender.com/health`, which should return `"database": "connected"`.
+
+### 2. Database migrations
+
+Run the migrations once for a new database, and again whenever a new file is added to `server/migrations/`. They are safe to re-run (`CREATE ... IF NOT EXISTS`).
+
+Run them from your machine against the same Neon database the backend uses:
+
+```bash
+cd server
+npm run db:migrate
 ```
 
-8. Enable **HTTPS** (for example with Let's Encrypt). Browsers allow microphone access only on HTTPS (or `localhost`), and the page then connects to `wss://`.
+`db:migrate` reads `DATABASE_URL` from `server/.env` if it exists, otherwise from the environment. Make sure it points to the production Neon database when you run it for production.
 
-`proxy_set_header Host $host` matters: the WebSocket origin check compares the browser's `Origin` with the `Host` header. If your proxy changes the host, add the site's origin to `ALLOWED_ORIGINS`.
+### 3. Frontend on Vercel
+
+Import the same repository as a new Vercel project with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Framework Preset | Vite |
+| Root Directory | `client` |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+
+Use Node.js 22.x in the project settings (Vite 8 requires Node.js 22.12+ or 20.19+).
+
+**Environment variables** (Vercel → Project → Settings → Environment Variables):
+
+| Variable | Value |
+| --- | --- |
+| `VITE_API_BASE_URL` | `https://speech-to-text-ddk6.onrender.com` |
+| `VITE_WS_URL` | `wss://speech-to-text-ddk6.onrender.com/ws` |
+
+These values are built into the bundle, so **redeploy the frontend after changing them**. Then copy the Vercel URL into `ALLOWED_ORIGINS` on Render and redeploy the backend.
+
+Vercel serves the site over HTTPS, which browsers require for microphone access. Because the page is HTTPS, the WebSocket URL must use `wss://`.
+
+### 4. Verify the deployment
+
+Open the Vercel URL and check:
+
+1. **REST API:** `https://speech-to-text-ddk6.onrender.com/health` returns `"database": "connected"`.
+2. **Transcript history:** the Saved Transcripts list loads without errors in the browser console (a CORS error here means `ALLOWED_ORIGINS` does not exactly match the Vercel origin).
+3. **WebSocket recording:** Start Recording, allow the microphone, speak, Pause, Resume, then Stop. Live text should appear and the new transcript should appear in the list. A failed connection usually means a wrong `VITE_WS_URL` or an `ALLOWED_ORIGINS` mismatch.
+4. **Editing:** edit a transcript, save it, and reload the page to confirm the change was stored.
+5. **Audio playback:** press Play on the new recording; the original audio should play.
+6. **Deleting:** delete a test transcript and confirm it disappears after reloading.
+
+**Troubleshooting**
+
+- **CORS error in the browser console:** `ALLOWED_ORIGINS` on Render does not match the page origin exactly (check `https://`, the domain, and the trailing slash), or the backend was not redeployed after the change.
+- **Requests go to the Vercel domain instead of Render:** `VITE_API_BASE_URL` was not set when the frontend was built; set it and redeploy.
+- **First request is slow:** if your Render plan suspends idle services, the first request after a quiet period waits for the service to start.
 
 ## Security considerations
 
 - **API key stays on the server.** `GEMINI_API_KEY` is read from server environment variables only; the browser talks to the server, never to Gemini.
-- **Secrets are not committed.** `.env` files are ignored by Git; `.env.example` contains no values.
+- **Never commit secrets.** `.env` files are ignored by Git, and the `.env.example` files contain only empty values or placeholders. Set real values only in your local `.env` files and in the Render and Vercel dashboards. Frontend `VITE_` variables are public, so never put keys or passwords in them.
+- **Restricted origins (CORS).** Only origins listed in `ALLOWED_ORIGINS` receive CORS headers, so other websites cannot call the API from a browser. CORS is a browser protection, not authentication: tools such as `curl` can still call the API directly.
 - **SQL injection protection.** All queries use parameterized values; the sort direction is chosen from a fixed list (`newest`/`oldest`); `%` and `_` in searches are escaped.
 - **Input validation.** UUIDs, text length, duration, search length, sort value and dates are validated before any query.
 - **WebSocket origin check.** CORS does not cover WebSockets, so the server checks the `Origin` header and rejects other sites with `403`.
 - **Cost and abuse limits.** Concurrent recordings are capped (`MAX_CONCURRENT_SESSIONS`), each recording has a time limit (`SESSION_LIMIT_SECONDS`, max 600), and WebSocket messages are limited to 64 KB.
 - **No error details leak.** Clients receive generic error messages; details are logged on the server only.
-- **No authentication.** As specified for this assignment, there is no login. Anyone who can open the deployed URL can view, edit and delete transcripts and play recordings. Add authentication before storing private recordings.
+- **No authentication.** The app currently has no login or user accounts. Anyone who can open the deployed frontend, or who sends requests directly to the backend URL, can view, edit and delete transcripts and play recordings. Do not store private or sensitive recordings, and add authentication before real-world use.
 
 ## Known limitations
 
@@ -445,7 +508,6 @@ server {
 - **Audio storage size.** Audio is stored uncompressed (about 1.9 MB per minute) in PostgreSQL, which uses database storage quickly on small plans.
 - **List size.** The dashboard shows the newest 100 transcripts that match the current filters.
 - **Browser support.** Tested in Chromium-based browsers. Safari and iPhone playback have not been verified.
-- **Single-origin deployment.** Frontend and backend must share one domain (see [Deployment](#deployment)).
 - **In-progress recordings on restart.** Restarting or redeploying the server ends any recording in progress.
 - **No automated tests** are included yet.
 

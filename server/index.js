@@ -11,6 +11,24 @@ import { handleTranscription } from './src/services/gemini_live.js';
 const app = express();
 
 app.disable('x-powered-by');
+
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    res.vary('Origin');
+
+    if (origin && config.allowedOrigins.includes(origin)) {
+        res.set('Access-Control-Allow-Origin', origin);
+        res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.set('Access-Control-Allow-Headers', 'Content-Type');
+        res.set('Access-Control-Max-Age', '600');
+    }
+
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
+
 app.use(responseHandler());
 app.use(express.json({ limit: config.jsonBodyLimit }));
 

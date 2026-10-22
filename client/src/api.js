@@ -1,5 +1,7 @@
-const request = async (url, options = {}) => {
-    const response = await fetch(url, {
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+const request = async (path, options = {}) => {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
         ...options,
         headers: { 'Content-Type': 'application/json' },
     });
@@ -34,4 +36,12 @@ export const deleteTranscript = (id) => {
     return request(`/transcripts/${id}`, { method: 'DELETE' });
 };
 
-export const getAudioUrl = (id) => `/transcripts/${id}/audio`;
+export const getAudioUrl = (id) => `${API_BASE_URL}/transcripts/${id}/audio`;
+
+export const getWebSocketUrl = () => {
+    if (import.meta.env.VITE_WS_URL) {
+        return import.meta.env.VITE_WS_URL;
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${protocol}://${window.location.host}/ws`;
+};
