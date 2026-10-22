@@ -6,10 +6,11 @@ Live transcription uses the Google Gemini Live API (`gemini-3.5-transcribe-live`
 
 > **Why Gemini instead of a self-hosted open-source model?** Gemini provides low-latency streaming transcription with automatic multilingual and code-mixed language support as a managed API, so the app needs no GPU server or model hosting to deliver real-time results.
 
-**Live demo (frontend, Vercel):** `https://speech-to-text-orpin-three.vercel.app/`
 
-**Backend (Render):** `[https://speech-to-text-ddk6.onrender.com](https://speech-to-text-ddk6.onrender.com/health)` 
- **GitHub Repository:** https://github.com/SREENATHREDDYK/speech-to-text
+**Live Demo:** [Speech-to-Text App](https://speech-to-text-orpin-three.vercel.app/)
+**Backend Health:** [Check API Status](https://speech-to-text-ddk6.onrender.com/health)
+**GitHub Repository:** [speech-to-text](https://github.com/SREENATHREDDYK/speech-to-text)
+
 ---
 
 ## Table of contents
